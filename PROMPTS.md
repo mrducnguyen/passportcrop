@@ -28,4 +28,6 @@
 
 14. Add pinch-to-zoom support for mobile devices. Show a GPU warning near the Remove Background button on machines without GPU acceleration.
 
-15. Write a concise list of all the prompts used to build this app into PROMPTS.md, fixing all typos.
+15. Replace all "Upload" wording with "choose a file" since nothing is uploaded anywhere. Add a 2-line footer with a concise, slightly funny privacy note: photos stay on the local machine — unplug internet and it still works.
+
+16. Split all CSS out to separate `.styles.ts` files (e.g. `PhotoCropper.styles.ts`) and import them in the component TSX files.
