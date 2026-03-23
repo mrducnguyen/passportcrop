@@ -1,0 +1,9 @@
+node_modules/
+dist/
+
+# Model files copied by Vite plugin at dev/build time (regenerated, not committed)
+public/models/
+
+# Local env overrides (use .env.local to disable face detection locally)
+.env.local
+.env.*.local
