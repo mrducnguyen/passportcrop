@@ -2,6 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_FACE_DETECTION: string
+  readonly VITE_FACE_MODELS_URL: string | undefined
 }
 
 interface ImportMeta {

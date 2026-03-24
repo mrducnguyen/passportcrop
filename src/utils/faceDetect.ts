@@ -13,7 +13,8 @@ async function getApi(): Promise<FaceApiModule> {
 
 function loadModels(): Promise<void> {
   if (!loadPromise) {
-    loadPromise = getApi().then((api) => api.nets.tinyFaceDetector.loadFromUri('/models'))
+    const modelUrl = import.meta.env.VITE_FACE_MODELS_URL ?? '/models'
+    loadPromise = getApi().then((api) => api.nets.tinyFaceDetector.loadFromUri(modelUrl))
   }
   return loadPromise
 }

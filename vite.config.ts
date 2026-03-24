@@ -1,6 +1,6 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
-import { cpSync, mkdirSync } from 'node:fs'
+import { cpSync, mkdirSync, rmSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 // ─── Feature flag helpers ───────────────────────────────────────────────────
@@ -15,6 +15,16 @@ const TINY_FACE_MODELS = [
   'tiny_face_detector_model-weights_manifest.json',
   'tiny_face_detector_model.bin',
 ]
+
+/** Removes dist/models/ after a CDN build — public/ is copied automatically by Vite. */
+function excludeLocalModelsPlugin(): Plugin {
+  return {
+    name: 'exclude-local-models',
+    closeBundle() {
+      rmSync(resolve(process.cwd(), 'dist/models'), { recursive: true, force: true })
+    },
+  }
+}
 
 /** Copies TinyFaceDetector model files into public/models/ before dev/build. */
 function copyFaceModelsPlugin(): Plugin {
@@ -40,6 +50,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd())
   const faceDetection = resolveFlag('VITE_FACE_DETECTION', env)
   const bgRemoval = resolveFlag('VITE_BG_REMOVAL', env)
+  const faceModelsCdn = env['VITE_FACE_MODELS_URL'] // set in .env.cdn
 
   const manualChunks: Record<string, string[]> = {}
   if (faceDetection) manualChunks['face-api'] = ['@vladmandic/face-api']
@@ -48,7 +59,9 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       react(),
-      ...(faceDetection ? [copyFaceModelsPlugin()] : []),
+      // Skip local model copy when using CDN — models are fetched at runtime.
+      ...(faceDetection && !faceModelsCdn ? [copyFaceModelsPlugin()] : []),
+      ...(faceModelsCdn ? [excludeLocalModelsPlugin()] : []),
     ],
 
     define: {

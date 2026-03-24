@@ -7,3 +7,5 @@ public/models/
 # Local env overrides (use .env.local to disable face detection locally)
 .env.local
 .env.*.local
+
+/.claude/settings.local.json
