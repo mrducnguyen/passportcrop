@@ -1,0 +1,65 @@
+import { css } from '@emotion/css'
+
+export const s = {
+  // ── SVG layers ────────────────────────────────────────────────────────────
+  svgLayer: css`
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    user-select: none;
+  `,
+  guidesLayer: css`
+    mix-blend-mode: difference;
+  `,
+
+  // ── Mask ──────────────────────────────────────────────────────────────────
+  mask: css`fill: rgba(0,0,0,0.62)`,
+
+  // ── Frame + corner ticks ─────────────────────────────────────────────────
+  frameRect: css`
+    fill: none;
+    stroke: white;
+    stroke-width: 1.5;
+  `,
+  cornerTick: css`
+    fill: none;
+    stroke: white;
+    stroke-width: 2;
+  `,
+
+  // ── Face oval ─────────────────────────────────────────────────────────────
+  oval: css`
+    fill: none;
+    stroke: white;
+    stroke-width: 1.5;
+    stroke-dasharray: 6 4;
+    opacity: 0.55;
+  `,
+
+  // ── Shared guide line base ────────────────────────────────────────────────
+  guideLine: css`
+    fill: none;
+    stroke-width: 1.5;
+    stroke-dasharray: 6 4;
+  `,
+
+  // ── Shared label base ────────────────────────────────────────────────────
+  guideLabel: css`
+    font-size: 16px;
+    font-family: system-ui;
+  `,
+
+  // ── Per-guide colours ─────────────────────────────────────────────────────
+  strokeYellow: css`stroke: #facc15`,
+  fillYellow:   css`fill:   #facc15`,
+  strokeBlue:   css`stroke: #60cdff`,
+  fillBlue:     css`fill:   #60cdff`,
+
+  // ── Dimension label ───────────────────────────────────────────────────────
+  dimLabel: css`
+    fill: white;
+    opacity: 0.5;
+    font-size: 13px;
+    font-family: system-ui;
+  `,
+}

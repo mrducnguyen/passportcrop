@@ -1,5 +1,7 @@
+import { cx } from '@emotion/css'
 import type { PassportSpec } from '../utils/passportSpecs.ts'
 import type { FrameRect } from '../utils/cropImage.ts'
+import { s } from './PassportOverlay.styles.ts'
 
 interface Props {
   containerW: number
@@ -12,11 +14,11 @@ export default function PassportOverlay({ containerW, containerH, frame }: Props
   const { x: fx, y: fy, w: fw, h: fh } = frame
 
   // Guide line positions in container pixels
-  const crownY  = fy + fh * 0.08
-  const chinY   = fy + fh * 0.83
-  const eyeY    = fy + fh * 0.37
+  const crownY = fy + fh * 0.08
+  const chinY  = fy + fh * 0.83
+  const eyeY   = fy + fh * 0.37
 
-  // Face oval dimensions — use spec.guides but compute from frame
+  // Face oval dimensions — computed from frame
   const ovalRx = (fw * 0.68) / 2
   const ovalRy = (chinY - crownY) / 2
   const ovalCx = fx + fw / 2
@@ -36,90 +38,54 @@ export default function PassportOverlay({ containerW, containerH, frame }: Props
   ].join(' ')
 
   return (
-    <svg
-      width={containerW}
-      height={containerH}
-      style={{ position: 'absolute', inset: 0, pointerEvents: 'none', userSelect: 'none' }}
-    >
-      {/* Dark overlay outside passport frame */}
-      <path d={maskPath} fillRule="evenodd" fill="rgba(0,0,0,0.62)" />
+    <>
+      {/* Dark overlay outside passport frame — no blend mode, sits as a plain layer */}
+      <svg className={s.svgLayer} width={containerW} height={containerH}>
+        <path className={s.mask} fillRule="evenodd" d={maskPath} />
+      </svg>
 
-      {/* Passport frame border */}
-      <rect x={fx} y={fy} width={fw} height={fh} fill="none" stroke="white" strokeWidth="1.5" />
+      {/* Guide elements — mix-blend-mode on the <svg> so it applies to the composited layer */}
+      <svg className={cx(s.svgLayer, s.guidesLayer)} width={containerW} height={containerH}>
+        {/* Passport frame border */}
+        <rect className={s.frameRect} x={fx} y={fy} width={fw} height={fh} />
 
-      {/* Corner ticks for precision alignment */}
-      {[
-        [fx, fy], [fx + fw, fy], [fx, fy + fh], [fx + fw, fy + fh],
-      ].map(([cx, cy], i) => {
-        const dx = cx === fx ? 1 : -1
-        const dy = cy === fy ? 1 : -1
-        return (
-          <g key={i}>
-            <line x1={cx} y1={cy} x2={cx + dx * 12} y2={cy} stroke="white" strokeWidth="2" />
-            <line x1={cx} y1={cy} x2={cx} y2={cy + dy * 12} stroke="white" strokeWidth="2" />
-          </g>
-        )
-      })}
+        {/* Corner ticks */}
+        {([
+          [fx,      fy     ],
+          [fx + fw, fy     ],
+          [fx,      fy + fh],
+          [fx + fw, fy + fh],
+        ] as [number, number][]).map(([px, py], i) => {
+          const dx = px === fx ? 1 : -1
+          const dy = py === fy ? 1 : -1
+          return (
+            <g key={i}>
+              <line className={s.cornerTick} x1={px} y1={py} x2={px + dx * 12} y2={py} />
+              <line className={s.cornerTick} x1={px} y1={py} x2={px} y2={py + dy * 12} />
+            </g>
+          )
+        })}
 
-      {/* Face oval guide */}
-      <ellipse
-        cx={ovalCx}
-        cy={ovalCy}
-        rx={ovalRx}
-        ry={ovalRy}
-        fill="none"
-        stroke="rgba(255,255,255,0.55)"
-        strokeWidth="1.5"
-        strokeDasharray="6 4"
-      />
+        {/* Face oval */}
+        <ellipse className={s.oval} cx={ovalCx} cy={ovalCy} rx={ovalRx} ry={ovalRy} />
 
-      {/* Crown / top-of-head line */}
-      <line
-        x1={lineX1} y1={crownY}
-        x2={lineX2} y2={crownY}
-        stroke="#facc15"
-        strokeWidth="1.5"
-        strokeDasharray="6 4"
-      />
-      <text x={labelX} y={crownY + 4} fill="#facc15" fontSize="10" fontFamily="system-ui">
-        crown
-      </text>
+        {/* Crown */}
+        <line className={cx(s.guideLine, s.strokeYellow)} x1={lineX1} y1={crownY} x2={lineX2} y2={crownY} />
+        <text className={cx(s.guideLabel, s.fillYellow)} x={labelX} y={crownY + 6}>crown</text>
 
-      {/* Chin line */}
-      <line
-        x1={lineX1} y1={chinY}
-        x2={lineX2} y2={chinY}
-        stroke="#facc15"
-        strokeWidth="1.5"
-        strokeDasharray="6 4"
-      />
-      <text x={labelX} y={chinY + 4} fill="#facc15" fontSize="10" fontFamily="system-ui">
-        chin
-      </text>
+        {/* Chin */}
+        <line className={cx(s.guideLine, s.strokeYellow)} x1={lineX1} y1={chinY} x2={lineX2} y2={chinY} />
+        <text className={cx(s.guideLabel, s.fillYellow)} x={labelX} y={chinY + 6}>chin</text>
 
-      {/* Eye level line */}
-      <line
-        x1={lineX1} y1={eyeY}
-        x2={lineX2} y2={eyeY}
-        stroke="rgba(96,205,255,0.7)"
-        strokeWidth="1"
-        strokeDasharray="4 6"
-      />
-      <text x={labelX} y={eyeY + 4} fill="rgba(96,205,255,0.85)" fontSize="10" fontFamily="system-ui">
-        eyes
-      </text>
+        {/* Eyes */}
+        <line className={cx(s.guideLine, s.strokeBlue)} x1={lineX1} y1={eyeY} x2={lineX2} y2={eyeY} />
+        <text className={cx(s.guideLabel, s.fillBlue)} x={labelX} y={eyeY + 6}>eyes</text>
 
-      {/* Dimension label (bottom of frame) */}
-      <text
-        x={fx + fw / 2}
-        y={fy + fh + 18}
-        fill="rgba(255,255,255,0.5)"
-        fontSize="11"
-        fontFamily="system-ui"
-        textAnchor="middle"
-      >
-        face height guide inside
-      </text>
-    </svg>
+        {/* Dimension label */}
+        <text className={s.dimLabel} x={fx + fw / 2} y={fy + fh + 20} textAnchor="middle">
+          face height guide inside
+        </text>
+      </svg>
+    </>
   )
 }

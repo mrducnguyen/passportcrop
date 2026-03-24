@@ -26,7 +26,8 @@ const MAX_SCALE = 20
 // ~4–5 overlapping passes needed to cross the snap threshold.
 const ERASE_STRENGTH = 0.4
 // Pixels with alpha below this (out of 255) snap to fully transparent after each stroke.
-const ERASE_SNAP_THRESHOLD = 30
+const ERASE_SNAP_THRESHOLD = 10
+const UNDO_MAX_STEPS = 20
 
 // ─── Component ─────────────────────────────────────────────────────────────
 
@@ -56,17 +57,20 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
   const [eraserActive, setEraserActive] = useState(false)
   const [eraserSize, setEraserSize] = useState(20) // screen-px radius
   const [eraserReady, setEraserReady] = useState(false) // canvas has image data
-  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null)
   const [canUndo, setCanUndo] = useState(false)
 
   const dragActive = useRef(false)
   const lastPointer = useRef({ x: 0, y: 0 })
   const isErasing = useRef(false)
   const initialLoadDone = useRef(false)
-  const undoStack = useRef<ImageBitmap[]>([])
+  const undoStack = useRef<HTMLCanvasElement[]>([])
   const activePointers = useRef<Map<number, { x: number; y: number }>>(new Map())
   const lastPinchDist = useRef(0)
   const erasedBounds = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  // Cached container rect — invalidated on resize so getBoundingClientRect is called at most once per stroke
+  const containerRectRef = useRef<DOMRect | null>(null)
+  // Ref to the eraser cursor <g> — updated imperatively to avoid React re-renders on every pointer move
+  const cursorGroupRef = useRef<SVGGElement>(null)
 
   // Sync mutable values into refs so stable callbacks always read the latest state.
   const transformRef = useRef(transform)
@@ -91,7 +95,7 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
     initialLoadDone.current = false
     setEraserActive(false)
     setEraserReady(false)
-    undoStack.current.forEach((b) => b.close())
+    undoStack.current.forEach((c) => { c.width = 0 })
     undoStack.current = []
     setCanUndo(false)
   }, [imgSrc])
@@ -99,7 +103,7 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
   // ── Reset eraser canvas when processed image changes ───────────────────
   useEffect(() => {
     setEraserReady(false)
-    undoStack.current.forEach((b) => b.close())
+    undoStack.current.forEach((c) => { c.width = 0 })
     undoStack.current = []
     setCanUndo(false)
     if (!processedSrc) setEraserActive(false)
@@ -148,6 +152,7 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
       const entry = entries[0]
       if (!entry) return
       const { width, height } = entry.contentRect
+      containerRectRef.current = null // invalidate — container moved or resized
       setContainerSize({ w: width, h: height })
     })
     ro.observe(el)
@@ -178,7 +183,7 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
     const y = frame.y + (frame.h - nat.h * scale) / 2
     setTransform({ x, y, scale })
 
-    if (__FACE_DETECTION__) {
+    if (__FACE_DETECTION__ && gpuAvailable) {
       setDetectStatus('detecting')
       detectFace(img)
         .then((face) => {
@@ -191,7 +196,7 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
         })
         .catch(() => setDetectStatus('notfound'))
     }
-  }, [frame, spec])
+  }, [frame, spec, gpuAvailable])
 
   // ── Erase at a screen coordinate ───────────────────────────────────────
   // Reads transform/eraserSize from refs — no deps needed, always stable.
@@ -203,7 +208,7 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
     const el = containerRef.current
     if (!el) return
 
-    const rect = el.getBoundingClientRect()
+    const rect = containerRectRef.current ?? el.getBoundingClientRect()
     const t = transformRef.current
     const screenR = eraserSizeRef.current
 
@@ -213,11 +218,11 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
     const imgR = screenR / t.scale
 
     // Soft radial gradient — partial opacity so multiple passes are needed to fully erase.
-    // Pixels only disappear after crossing ERASE_SNAP_THRESHOLD (snapped in onPointerUp).
+    // Pixels only disappear after crossing ERASE_SNAP_THRESHOLD (snapped at download time).
     const grad = ctx.createRadialGradient(imgX, imgY, 0, imgX, imgY, imgR)
-    grad.addColorStop(0,   `rgba(0,0,0,${ERASE_STRENGTH})`)
+    grad.addColorStop(0, `rgba(0,0,0,${ERASE_STRENGTH})`)
     grad.addColorStop(0.6, `rgba(0,0,0,${ERASE_STRENGTH * 0.5})`)
-    grad.addColorStop(1,    'rgba(0,0,0,0)')
+    grad.addColorStop(1, 'rgba(0,0,0,0)')
 
     ctx.save()
     ctx.globalCompositeOperation = 'destination-out'
@@ -241,15 +246,15 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
 
   // ── Undo last erase stroke ──────────────────────────────────────────────
   const handleUndo = useCallback(() => {
-    const bitmap = undoStack.current.pop()
-    if (!bitmap) return
+    const buf = undoStack.current.pop()
+    if (!buf) return
     const canvas = eraserCanvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(bitmap, 0, 0)
-    bitmap.close()  // release VRAM immediately
+    ctx.drawImage(buf, 0, 0)
+    buf.width = 0 // release GPU memory
     setCanUndo(undoStack.current.length > 0)
   }, [])
 
@@ -266,7 +271,7 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
 
     const x = Math.max(0, Math.floor(bounds.x1))
     const y = Math.max(0, Math.floor(bounds.y1))
-    const w = Math.min(canvas.width  - x, Math.ceil(bounds.x2 - bounds.x1) + 2)
+    const w = Math.min(canvas.width - x, Math.ceil(bounds.x2 - bounds.x1) + 2)
     const h = Math.min(canvas.height - y, Math.ceil(bounds.y2 - bounds.y1) + 2)
     if (w <= 0 || h <= 0) return
 
@@ -320,16 +325,17 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
       if (eraserActive && eraserReady) {
         const canvas = eraserCanvasRef.current
         if (canvas) {
-          // ImageBitmap: lightweight GPU texture — no extra context, explicit close() frees VRAM
-          void createImageBitmap(canvas).then((bitmap) => {
-            const evicted = undoStack.current.length >= 20 ? undoStack.current.shift() : null
-            evicted?.close()
-            undoStack.current.push(bitmap)
-            setCanUndo(true)
-          })
+          // Canvas-to-canvas drawImage is a pure GPU copy — no CPU readback, no async Promise stall
+          const buf = document.createElement('canvas')
+          buf.width = canvas.width
+          buf.height = canvas.height
+          buf.getContext('2d')?.drawImage(canvas, 0, 0)
+          const evicted = undoStack.current.length >= UNDO_MAX_STEPS ? undoStack.current.shift() : null
+          if (evicted) evicted.width = 0 // release GPU memory
+          undoStack.current.push(buf)
+          setCanUndo(true)
         }
         isErasing.current = true
-        erasedBounds.current = null  // fresh bounding box for this stroke
         eraseAt(e.clientX, e.clientY)
       } else {
         dragActive.current = true
@@ -370,8 +376,13 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
       if (eraserActiveRef.current) {
         const el = containerRef.current
         if (el) {
-          const rect = el.getBoundingClientRect()
-          setCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+          containerRectRef.current ??= el.getBoundingClientRect()
+          const { left, top } = containerRectRef.current
+          cursorGroupRef.current?.setAttribute(
+            'transform',
+            `translate(${e.clientX - left},${e.clientY - top})`,
+          )
+          cursorGroupRef.current?.style.setProperty('visibility', 'visible')
         }
         if (isErasing.current) eraseAt(e.clientX, e.clientY)
         return
@@ -387,7 +398,6 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
 
   const onPointerUp = useCallback((e: PointerEvent<HTMLDivElement>) => {
     activePointers.current.delete(e.pointerId)
-    if (isErasing.current) snapLowAlpha()
     isErasing.current = false
 
     if (activePointers.current.size < 2) lastPinchDist.current = 0
@@ -400,7 +410,7 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
     } else {
       dragActive.current = false
     }
-  }, [snapLowAlpha])
+  }, [])
 
   // ── Wheel zoom toward cursor ────────────────────────────────────────────
   const onWheel = useCallback(
@@ -434,11 +444,13 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
     if (!source) return
     setDownloading(true)
     try {
+      // Snap near-transparent pixels once, just before download — keeps it off the interactive path
+      if (eraserReady) snapLowAlpha()
       await cropAndDownload(source, transform, frame, spec, bgColor)
     } finally {
       setDownloading(false)
     }
-  }, [eraserReady, transform, frame, spec, bgColor])
+  }, [eraserReady, snapLowAlpha, transform, frame, spec, bgColor])
 
   // ── Auto-dismiss face detection badge ──────────────────────────────────
   useEffect(() => {
@@ -594,7 +606,7 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        onPointerLeave={() => setCursorPos(null)}
+        onPointerLeave={() => cursorGroupRef.current?.style.setProperty('visibility', 'hidden')}
         onWheel={onWheel}
       >
         {/* Background colour — sits below the image so it shows through transparent areas */}
@@ -635,8 +647,8 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
           />
         )}
 
-        {/* Eraser circle cursor indicator — mix-blend-mode:difference inverts against any bg */}
-        {eraserActive && cursorPos && (
+        {/* Eraser circle cursor indicator — updated imperatively to avoid re-renders on every move */}
+        {eraserActive && (
           <svg
             style={{
               position: 'absolute',
@@ -647,32 +659,18 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
             width={containerSize.w}
             height={containerSize.h}
           >
-            <circle
-              cx={cursorPos.x}
-              cy={cursorPos.y}
-              r={eraserSize}
-              fill="none"
-              stroke="white"
-              strokeWidth="1.5"
-              strokeDasharray="5 3"
-            />
-            {/* Center crosshair */}
-            <line
-              x1={cursorPos.x - 5}
-              y1={cursorPos.y}
-              x2={cursorPos.x + 5}
-              y2={cursorPos.y}
-              stroke="white"
-              strokeWidth="1"
-            />
-            <line
-              x1={cursorPos.x}
-              y1={cursorPos.y - 5}
-              x2={cursorPos.x}
-              y2={cursorPos.y + 5}
-              stroke="white"
-              strokeWidth="1"
-            />
+            {/* <g transform="translate(x,y)"> is set imperatively; all children are relative to cursor center */}
+            <g ref={cursorGroupRef} style={{ visibility: 'hidden' }}>
+              <circle
+                r={eraserSize}
+                fill="none"
+                stroke="white"
+                strokeWidth="1.5"
+                strokeDasharray="5 3"
+              />
+              <line x1={-5} y1={0} x2={5} y2={0} stroke="white" strokeWidth="1" />
+              <line x1={0} y1={-5} x2={0} y2={5} stroke="white" strokeWidth="1" />
+            </g>
           </svg>
         )}
 
