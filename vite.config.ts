@@ -57,6 +57,8 @@ export default defineConfig(({ mode }) => {
   if (bgRemoval) manualChunks['bg-removal'] = ['@imgly/background-removal']
 
   return {
+    base: mode === 'development' ? '/' : '/passportcrop/',
+
     plugins: [
       react(),
       // Skip local model copy when using CDN — models are fetched at runtime.
