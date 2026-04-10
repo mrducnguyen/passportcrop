@@ -12,6 +12,7 @@ import PassportOverlay from './PassportOverlay.tsx'
 import type { PassportSpec } from '../utils/passportSpecs.ts'
 import type { Transform } from '../utils/cropImage.ts'
 import { cropAndDownload } from '../utils/cropImage.ts'
+import { printLayoutAndDownload, calcPrintLayout } from '../utils/printLayout.ts'
 import { detectFace, faceToTransform } from '../utils/faceDetect.ts'
 import { removeBackground } from '../utils/bgRemoval.ts'
 import BgColorPicker from './BgColorPicker.tsx'
@@ -46,6 +47,7 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
   const [transform, setTransform] = useState<Transform>({ x: 0, y: 0, scale: 1 })
   const [naturalSize, setNaturalSize] = useState({ w: 0, h: 0 })
   const [downloading, setDownloading] = useState(false)
+  const [printingLayout, setPrintingLayout] = useState(false)
   const [detectStatus, setDetectStatus] = useState<'idle' | 'detecting' | 'found' | 'notfound'>(
     'idle',
   )
@@ -143,6 +145,15 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
 
     return { x: (cw - fw) / 2, y: (ch - fh) / 2, w: fw, h: fh }
   }, [containerSize, spec])
+
+  // ── Actual download dimensions (native source pixels, min = spec 300 DPI) ─
+  const downloadSize = useMemo(() => {
+    const rawW = Math.round(frame.w / transform.scale)
+    const rawH = Math.round(frame.h / transform.scale)
+    const outW = rawW >= spec.outputWidth ? rawW : spec.outputWidth
+    const outH = rawW >= spec.outputWidth ? rawH : spec.outputHeight
+    return { w: outW, h: outH }
+  }, [frame, transform, spec])
 
   // ── Observe container resize ────────────────────────────────────────────
   useEffect(() => {
@@ -452,6 +463,20 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
     }
   }, [eraserReady, snapLowAlpha, transform, frame, spec, bgColor])
 
+  const handlePrintLayout = useCallback(async () => {
+    const source = eraserReady && eraserCanvasRef.current ? eraserCanvasRef.current : imgRef.current
+    if (!source) return
+    setPrintingLayout(true)
+    try {
+      if (eraserReady) snapLowAlpha()
+      await printLayoutAndDownload(source, transform, frame, spec, bgColor)
+    } finally {
+      setPrintingLayout(false)
+    }
+  }, [eraserReady, snapLowAlpha, transform, frame, spec, bgColor])
+
+  const printCount = useMemo(() => calcPrintLayout(spec).count, [spec])
+
   // ── Auto-dismiss face detection badge ──────────────────────────────────
   useEffect(() => {
     if (detectStatus !== 'found') return
@@ -592,9 +617,19 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
             </>
           )}
         </div>
-        <button className={s.btnPrimary} onClick={handleDownload} disabled={downloading}>
-          {downloading ? 'Saving…' : `↓ Download (${spec.outputWidth}×${spec.outputHeight}px)`}
-        </button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button className={s.btnPrimary} onClick={handleDownload} disabled={downloading || printingLayout}>
+            {downloading ? 'Saving…' : `↓ Download (${downloadSize.w}×${downloadSize.h}px)`}
+          </button>
+          <button
+            className={s.btnPrimary}
+            onClick={handlePrintLayout}
+            disabled={downloading || printingLayout}
+            title={`Tile ${printCount} photos on a 4×6 inch sheet — ready to print at Officeworks, KMart, etc.`}
+          >
+            {printingLayout ? 'Building…' : `⊞ Print 4×6 (${printCount} photos)`}
+          </button>
+        </div>
       </div>
 
       {bgStatus === 'done' && <BgColorPicker value={bgColor} onChange={setBgColor} />}
