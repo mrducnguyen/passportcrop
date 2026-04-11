@@ -15,7 +15,7 @@ const GAP_MM = 2
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function mmToPx(mm: number): number {
+export function mmToPx(mm: number): number {
   return Math.round((mm * PRINT_DPI) / MM_PER_IN)
 }
 
@@ -59,10 +59,15 @@ export function calcPrintLayout(spec: PassportSpec): PrintLayout {
 
 /**
  * Tiles the cropped passport photo onto a 4×6 inch sheet (portrait or landscape,
- * whichever fits more photos) at 300 DPI and triggers a JPEG download suitable
- * for printing at Officeworks, KMart, etc.
+ * whichever fits more photos) and triggers a JPEG download suitable for printing
+ * at Officeworks, KMart, etc.
  *
  * Photos are centred on the sheet with 2 mm gaps and light grey dashed cut guides.
+ *
+ * @param nativePixels  When true, each tile is rendered at the original source
+ *   pixel dimensions (same resolution as the single-photo download) instead of
+ *   the fixed 300 DPI target.  The sheet grows proportionally — e.g. a 2000 px
+ *   wide crop on a 4-column layout produces a ~8000 px wide sheet.
  */
 export async function printLayoutAndDownload(
   imgEl: HTMLImageElement | HTMLCanvasElement,
@@ -70,6 +75,7 @@ export async function printLayoutAndDownload(
   frame: FrameRect,
   spec: PassportSpec,
   bgColor = '#ffffff',
+  nativePixels = false,
 ): Promise<void> {
   // ── Source crop (same coordinate mapping as cropAndDownload) ──────────────
   const srcX = (frame.x - transform.x) / transform.scale
@@ -90,13 +96,24 @@ export async function printLayoutAndDownload(
   const originY_mm = (sheetH_mm - gridH_mm) / 2
 
   // ── Convert to pixels ─────────────────────────────────────────────────────
-  const sheetW = mmToPx(sheetW_mm)
-  const sheetH = mmToPx(sheetH_mm)
-  const tileW  = mmToPx(tileW_mm)
-  const tileH  = mmToPx(tileH_mm)
-  const gapPx  = mmToPx(GAP_MM)
-  const originX = mmToPx(originX_mm)
-  const originY = mmToPx(originY_mm)
+  // Native-pixel mode: scale tile dimensions to the actual source resolution
+  // (same as cropAndDownload — native source pixels, min = spec 300 DPI output).
+  // All other pixel values (gap, origin, sheet) scale by the same factor so
+  // proportions are preserved.
+  const rawTileW = Math.round(srcW)
+  const rawTileH = Math.round(srcH)
+  const nativeTileW = rawTileW >= spec.outputWidth ? rawTileW : spec.outputWidth
+  const nativeTileH = rawTileW >= spec.outputWidth ? rawTileH : spec.outputHeight
+
+  const scaleFactor = nativePixels ? nativeTileW / mmToPx(tileW_mm) : 1
+
+  const tileW  = nativePixels ? nativeTileW : mmToPx(tileW_mm)
+  const tileH  = nativePixels ? nativeTileH : mmToPx(tileH_mm)
+  const gapPx  = Math.round(mmToPx(GAP_MM) * scaleFactor)
+  const originX = Math.round(mmToPx(originX_mm) * scaleFactor)
+  const originY = Math.round(mmToPx(originY_mm) * scaleFactor)
+  const sheetW = Math.round(mmToPx(sheetW_mm) * scaleFactor)
+  const sheetH = Math.round(mmToPx(sheetH_mm) * scaleFactor)
 
   // ── Draw ──────────────────────────────────────────────────────────────────
   const canvas = document.createElement('canvas')
@@ -152,7 +169,8 @@ export async function printLayoutAndDownload(
 
   // ── Download ──────────────────────────────────────────────────────────────
   const count = cols * rows
-  const filename = `passport-print-4x6-${spec.id}-${count}up.jpg`
+  const tag = nativePixels ? `${sheetW}x${sheetH}px` : '300dpi'
+  const filename = `passport-print-4x6-${spec.id}-${count}up-${tag}.jpg`
 
   await new Promise<void>((resolve, reject) => {
     canvas.toBlob(

@@ -12,7 +12,7 @@ import PassportOverlay from './PassportOverlay.tsx'
 import type { PassportSpec } from '../utils/passportSpecs.ts'
 import type { Transform } from '../utils/cropImage.ts'
 import { cropAndDownload } from '../utils/cropImage.ts'
-import { printLayoutAndDownload, calcPrintLayout } from '../utils/printLayout.ts'
+import { printLayoutAndDownload, calcPrintLayout, mmToPx } from '../utils/printLayout.ts'
 import { detectFace, faceToTransform } from '../utils/faceDetect.ts'
 import { removeBackground } from '../utils/bgRemoval.ts'
 import BgColorPicker from './BgColorPicker.tsx'
@@ -48,6 +48,7 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
   const [naturalSize, setNaturalSize] = useState({ w: 0, h: 0 })
   const [downloading, setDownloading] = useState(false)
   const [printingLayout, setPrintingLayout] = useState(false)
+  const [printingLayoutNative, setPrintingLayoutNative] = useState(false)
   const [detectStatus, setDetectStatus] = useState<'idle' | 'detecting' | 'found' | 'notfound'>(
     'idle',
   )
@@ -475,7 +476,33 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
     }
   }, [eraserReady, snapLowAlpha, transform, frame, spec, bgColor])
 
+  const handlePrintLayoutNative = useCallback(async () => {
+    const source = eraserReady && eraserCanvasRef.current ? eraserCanvasRef.current : imgRef.current
+    if (!source) return
+    setPrintingLayoutNative(true)
+    try {
+      if (eraserReady) snapLowAlpha()
+      await printLayoutAndDownload(source, transform, frame, spec, bgColor, true)
+    } finally {
+      setPrintingLayoutNative(false)
+    }
+  }, [eraserReady, snapLowAlpha, transform, frame, spec, bgColor])
+
   const printCount = useMemo(() => calcPrintLayout(spec).count, [spec])
+
+  // Native-pixel sheet dimensions — mirrors the logic in printLayoutAndDownload
+  const nativePrintSize = useMemo(() => {
+    const { cols, rows, sheetW_mm, sheetH_mm } = calcPrintLayout(spec)
+    const tileW_mm = spec.photoWidthMm
+    const rawTileW = Math.round(frame.w / transform.scale)
+    const rawTileH = Math.round(frame.h / transform.scale)
+    const nativeTileW = rawTileW >= spec.outputWidth ? rawTileW : spec.outputWidth
+    const nativeTileH = rawTileW >= spec.outputWidth ? rawTileH : spec.outputHeight
+    const scaleFactor = nativeTileW / mmToPx(tileW_mm)
+    const sheetW = Math.round(mmToPx(sheetW_mm) * scaleFactor)
+    const sheetH = Math.round(mmToPx(sheetH_mm) * scaleFactor)
+    return { w: sheetW, h: sheetH, cols, rows }
+  }, [frame, transform, spec])
 
   // ── Auto-dismiss face detection badge ──────────────────────────────────
   useEffect(() => {
@@ -618,16 +645,24 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
           )}
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          <button className={s.btnPrimary} onClick={handleDownload} disabled={downloading || printingLayout}>
+          <button className={s.btnPrimary} onClick={handleDownload} disabled={downloading || printingLayout || printingLayoutNative}>
             {downloading ? 'Saving…' : `↓ Download (${downloadSize.w}×${downloadSize.h}px)`}
           </button>
           <button
             className={s.btnPrimary}
             onClick={handlePrintLayout}
-            disabled={downloading || printingLayout}
-            title={`Tile ${printCount} photos on a 4×6 inch sheet — ready to print at Officeworks, KMart, etc.`}
+            disabled={downloading || printingLayout || printingLayoutNative}
+            title={`Tile ${printCount} photos on a 4×6 inch sheet at 300 DPI — ready to print at Officeworks, KMart, etc.`}
           >
-            {printingLayout ? 'Building…' : `⊞ Print 4×6 (${printCount} photos)`}
+            {printingLayout ? 'Building…' : `⊞ Print 4×6 300dpi (${printCount} photos)`}
+          </button>
+          <button
+            className={s.btnPrimary}
+            onClick={handlePrintLayoutNative}
+            disabled={downloading || printingLayout || printingLayoutNative}
+            title={`Tile ${printCount} photos on a 4×6 inch sheet at original pixel resolution (${nativePrintSize.w}×${nativePrintSize.h} px)`}
+          >
+            {printingLayoutNative ? 'Building…' : `⊞ Print 4×6 native (${nativePrintSize.w}×${nativePrintSize.h}px)`}
           </button>
         </div>
       </div>
