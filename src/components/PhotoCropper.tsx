@@ -497,7 +497,7 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
     const rawTileW = Math.round(frame.w / transform.scale)
     const rawTileH = Math.round(frame.h / transform.scale)
     const nativeTileW = rawTileW >= spec.outputWidth ? rawTileW : spec.outputWidth
-    const nativeTileH = rawTileW >= spec.outputWidth ? rawTileH : spec.outputHeight
+    const _nativeTileH = rawTileW >= spec.outputWidth ? rawTileH : spec.outputHeight
     const scaleFactor = nativeTileW / mmToPx(tileW_mm)
     const sheetW = Math.round(mmToPx(sheetW_mm) * scaleFactor)
     const sheetH = Math.round(mmToPx(sheetH_mm) * scaleFactor)
