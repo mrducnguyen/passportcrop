@@ -98,7 +98,9 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
     initialLoadDone.current = false
     setEraserActive(false)
     setEraserReady(false)
-    undoStack.current.forEach((c) => { c.width = 0 })
+    undoStack.current.forEach((c) => {
+      c.width = 0
+    })
     undoStack.current = []
     setCanUndo(false)
   }, [imgSrc])
@@ -106,7 +108,9 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
   // ── Reset eraser canvas when processed image changes ───────────────────
   useEffect(() => {
     setEraserReady(false)
-    undoStack.current.forEach((c) => { c.width = 0 })
+    undoStack.current.forEach((c) => {
+      c.width = 0
+    })
     undoStack.current = []
     setCanUndo(false)
     if (!processedSrc) setEraserActive(false)
@@ -342,7 +346,8 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
           buf.width = canvas.width
           buf.height = canvas.height
           buf.getContext('2d')?.drawImage(canvas, 0, 0)
-          const evicted = undoStack.current.length >= UNDO_MAX_STEPS ? undoStack.current.shift() : null
+          const evicted =
+            undoStack.current.length >= UNDO_MAX_STEPS ? undoStack.current.shift() : null
           if (evicted) evicted.width = 0 // release GPU memory
           undoStack.current.push(buf)
           setCanUndo(true)
@@ -495,9 +500,7 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
     const { cols, rows, sheetW_mm, sheetH_mm } = calcPrintLayout(spec)
     const tileW_mm = spec.photoWidthMm
     const rawTileW = Math.round(frame.w / transform.scale)
-    const rawTileH = Math.round(frame.h / transform.scale)
     const nativeTileW = rawTileW >= spec.outputWidth ? rawTileW : spec.outputWidth
-    const nativeTileH = rawTileW >= spec.outputWidth ? rawTileH : spec.outputHeight
     const scaleFactor = nativeTileW / mmToPx(tileW_mm)
     const sheetW = Math.round(mmToPx(sheetW_mm) * scaleFactor)
     const sheetH = Math.round(mmToPx(sheetH_mm) * scaleFactor)
@@ -645,7 +648,11 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
           )}
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          <button className={s.btnPrimary} onClick={handleDownload} disabled={downloading || printingLayout || printingLayoutNative}>
+          <button
+            className={s.btnPrimary}
+            onClick={handleDownload}
+            disabled={downloading || printingLayout || printingLayoutNative}
+          >
             {downloading ? 'Saving…' : `↓ Download (${downloadSize.w}×${downloadSize.h}px)`}
           </button>
           <button
@@ -662,7 +669,9 @@ export default function PhotoCropper({ imgSrc, spec, onReset }: Props) {
             disabled={downloading || printingLayout || printingLayoutNative}
             title={`Tile ${printCount} photos on a 4×6 inch sheet at original pixel resolution (${nativePrintSize.w}×${nativePrintSize.h} px)`}
           >
-            {printingLayoutNative ? 'Building…' : `⊞ Print 4×6 native (${nativePrintSize.w}×${nativePrintSize.h}px)`}
+            {printingLayoutNative
+              ? 'Building…'
+              : `⊞ Print 4×6 native (${nativePrintSize.w}×${nativePrintSize.h}px)`}
           </button>
         </div>
       </div>
